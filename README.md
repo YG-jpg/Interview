@@ -1,84 +1,130 @@
 # Event Booking
 
-A small Django app for booking event tickets.
+Django app for booking tickets for events.
 
-- **Organizers** use the Django admin to create, edit and delete events and see how many tickets are booked.
-- **Users** use the website or the REST API to see events, book tickets, see and cancel their bookings.
-- **Bookings are thread-safe**: many users (threads, processes, pods) can book the last tickets at the same time and an event is never overbooked.
+- Organizers add events in the Django admin.
+- Users reserve tickets on the website or through the REST API. A reservation holds the tickets for 5 minutes, then the user confirms it and gets a QR ticket.
+- If an event is sold out, users can join a waiting list.
+- The ticket count on the event page updates live (WebSocket).
+- Many users can book at the same moment and an event is never overbooked.
 
-Stack: Python 3.13, Django 5.2, Django REST Framework, PostgreSQL 17, Gunicorn (threads), Docker, Kubernetes.
+Stack: Django, Django REST Framework, PostgreSQL, Redis, Celery, Django Channels, Gunicorn, Docker, Kubernetes.
 
-## Run with Docker Compose (easiest)
+## Run it
+
+You need Docker Desktop.
 
 ```bash
 docker compose up --build
 ```
 
-- Website: http://localhost:8000/
-- API: http://localhost:8000/api/
-- Admin: http://localhost:8000/admin/ (`admin` / `admin`)
+| What | URL |
+|---|---|
+| Website | http://localhost:8000/ |
+| API | http://localhost:8000/api/ |
+| Admin | http://localhost:8000/admin/ (admin / admin) |
+| WebSocket | ws://localhost:8001/ws/events/<id>/ |
+
+1. Log in to the admin and add an event.
+2. Open the website, register, open the event and click Reserve.
+3. Go to My bookings and click Confirm (within 5 minutes). The QR ticket shows up.
+
+Stop with `Ctrl+C`. `docker compose down -v` also deletes the database.
+
+### Without Docker for Django
+
+Postgres and Redis still run in Docker, Django runs on your machine (Windows):
+
+```powershell
+docker run -d --name eb-db -p 5432:5432 -e POSTGRES_DB=events -e POSTGRES_USER=events -e POSTGRES_PASSWORD=events postgres:17
+docker run -d --name eb-redis -p 6379:6379 redis:7
+
+py -3.13 -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py runserver
+```
+
+In two more terminals (activate `.venv` first):
+
+```powershell
+celery -A config worker -B --pool=solo --loglevel=info   # --pool=solo is needed on Windows
+daphne -p 8001 config.asgi:application
+```
 
 ## Run on Kubernetes
 
-Manifests for a local cluster (Docker Desktop Kubernetes, minikube or kind).
+Docker Desktop: Settings -> Kubernetes -> Enable. Then:
 
 ```bash
 docker build -t event-booking:latest .
-# minikube: minikube image load event-booking:latest   |   kind: kind load docker-image event-booking:latest
 kubectl apply -f k8s/
-kubectl get pods        # wait until web pods are READY 1/1
+kubectl get pods
 ```
 
-Open http://localhost:30080/ (minikube: `minikube service web --url`).
+Website on http://localhost:30080/, WebSocket on port 30081.
 
-| File | What it creates |
+| File | What |
 |---|---|
-| `k8s/01-secret.yaml` | DB password, Django secret key, admin user |
-| `k8s/02-postgres.yaml` | Postgres Deployment + disk (PVC) + Service `postgres` |
-| `k8s/03-migrate-job.yaml` | One-time Job: `migrate` + create admin user |
-| `k8s/04-web.yaml` | Django Deployment (2 replicas) + NodePort Service on 30080 |
+| 01-config.yaml | ConfigMap + Secret (settings and passwords) |
+| 02-postgres.yaml | Postgres with a disk |
+| 03-redis.yaml | Redis |
+| 04-migrate-job.yaml | runs `migrate` once |
+| 05-web.yaml | Django + Gunicorn, 2 pods |
+| 06-worker.yaml | Celery worker + scheduler, 1 pod |
+| 07-websocket.yaml | daphne for WebSockets, 2 pods |
 
 ## API
 
-Auth: HTTP Basic (`-u username:password`) or the website login session. Errors look like `{"detail": "..."}`.
+Login with HTTP Basic (`curl -u user:pass`) or the website session. Errors are `{"detail": "..."}`.
 
-| Method | URL | Body | Success | Errors |
-|---|---|---|---|---|
-| POST | `/api/register/` | `{"username", "password"}` | 201 | 400 |
-| GET | `/api/events/` | | 200 | 401 |
-| GET | `/api/events/<id>/` | | 200 | 401, 404 |
-| GET | `/api/bookings/` | | 200 (only my bookings) | 401 |
-| POST | `/api/bookings/` | `{"event": 1, "tickets": 2}` | 201 | 400 (sold out, past event, bad input), 401 |
-| GET | `/api/bookings/<id>/` | | 200 | 401, 404 |
-| DELETE | `/api/bookings/<id>/` | | 204 | 401, 404 |
+| Method | URL | What |
+|---|---|---|
+| POST | /api/register/ | `{"username", "password"}` |
+| GET | /api/events/ | all events |
+| GET | /api/events/<id>/ | one event |
+| POST | /api/events/<id>/waitlist/ | join waiting list (only when sold out) `{"tickets": 1}` |
+| DELETE | /api/events/<id>/waitlist/ | leave waiting list |
+| GET | /api/bookings/ | my bookings |
+| POST | /api/bookings/ | reserve `{"event": 1, "tickets": 2}`, optional header `Idempotency-Key: <uuid>` |
+| GET | /api/bookings/<id>/ | one booking |
+| POST | /api/bookings/<id>/confirm/ | confirm a reservation |
+| DELETE | /api/bookings/<id>/ | cancel |
+| GET | /api/bookings/<id>/qr/ | QR ticket (PNG), only confirmed |
 
-```bash
-curl -X POST http://localhost:8000/api/register/ -H "Content-Type: application/json" -d '{"username": "ivan", "password": "secret123"}'
-curl -u ivan:secret123 http://localhost:8000/api/events/
-curl -u ivan:secret123 -X POST http://localhost:8000/api/bookings/ -H "Content-Type: application/json" -d '{"event": 1, "tickets": 2}'
-curl -u ivan:secret123 http://localhost:8000/api/bookings/
-curl -u ivan:secret123 -X DELETE http://localhost:8000/api/bookings/1/
-```
-
-On Windows PowerShell use `curl.exe` instead of `curl`.
-
-## Concurrency
-
-All booking rules are in [`events/services.py`](events/services.py). `book_tickets()` runs inside `transaction.atomic()` and locks the event row with `select_for_update()`. A second request for the same event waits until the first one commits, then sees the new ticket count. The lock lives in PostgreSQL, so it works across threads, Gunicorn processes and Kubernetes pods. A Python `threading.Lock` would only protect one process.
-
-The server runs Gunicorn with `--workers 2 --threads 4`, so every pod handles 8 requests at the same time.
-
-Proof:
-- `events/tests.py` → `ConcurrentBookingTests`: 20 threads book 1 ticket each for an event with 5 tickets. Exactly 5 succeed. A second test mixes bookings and cancels in parallel threads.
-- `scripts/concurrent_booking_demo.py`: 30 real HTTP clients in a `ThreadPoolExecutor` book the same event against the running app.
+Booking status: `pending` -> `confirmed`, or `cancelled`, or `expired` (not confirmed in 5 minutes).
 
 ```bash
-docker compose exec web python scripts/concurrent_booking_demo.py 1 http://localhost:8000 30
-# Successful bookings (201): 10
-# Rejected, sold out (400):  20
-# Event now: 10 of 10 booked
-# OK: no overbooking.
+curl -X POST localhost:8000/api/register/ -H "Content-Type: application/json" -d '{"username": "ivan", "password": "secret123"}'
+curl -u ivan:secret123 -X POST localhost:8000/api/bookings/ -H "Content-Type: application/json" -H "Idempotency-Key: 3f1c..." -d '{"event": 1, "tickets": 2}'
+curl -u ivan:secret123 -X POST localhost:8000/api/bookings/1/confirm/
+curl -u ivan:secret123 localhost:8000/api/bookings/1/qr/ -o ticket.png
 ```
+
+## How it works
+
+**No overselling.** `Event.booked_tickets` is changed with one `UPDATE` that checks and adds in the database (`events/services.py`):
+
+```python
+Event.objects.filter(pk=event_id, booked_tickets__lte=F("total_tickets") - tickets) \
+             .update(booked_tickets=F("booked_tickets") + tickets)
+```
+
+Postgres runs updates on the same row one after another and checks the `WHERE` again each time, so two requests can't both get the last ticket. This works across threads, processes and pods. A `CheckConstraint` (`booked_tickets <= total_tickets`) is the last safety net.
+
+**Reservations.** A booking starts as `pending` with `expires_at = now + 5 min`. A Celery beat task runs every 30 seconds and sets old ones to `expired` and gives the tickets back. Confirm and expire are both conditional updates on the status, so only one of them can win.
+
+**Idempotency.** If the client sends the same `Idempotency-Key` twice (for example a retry after a timeout), it gets the first booking back (200) instead of a second one. A `UniqueConstraint(user, idempotency_key)` makes this safe even when both requests arrive at the same moment.
+
+**Waiting list.** When tickets are freed (cancel or expire), a Celery task gives them to the people on the list, first come first served, as a normal 5 minute reservation.
+
+**Rate limiting.** DRF throttling: 10 bookings per minute per user, plus general limits. The counters are in Redis, so the limit is shared by all pods.
+
+**Live updates.** After every change `realtime.send_availability()` sends the new count to a Channels group. The event page listens on a WebSocket.
+
+**Threads.** Gunicorn runs 2 processes x 4 threads per pod. The tests start up to 100 threads at the same moment (`ThreadPoolExecutor` + `threading.Barrier`).
 
 ## Tests
 
@@ -86,29 +132,33 @@ docker compose exec web python scripts/concurrent_booking_demo.py 1 http://local
 docker compose run --rm web python manage.py test
 ```
 
-24 tests: API, website pages, and the threaded concurrency tests (they need PostgreSQL, so they run in Docker).
+Concurrency tests (`events/tests.py`, `ConcurrentBookingTests`): 100 users / 10 tickets, the same booking cancelled from 10 threads, the same idempotency key from 10 threads, confirm + cancel at once, bookings + cancels at once.
+
+Demo against the running app (create an event with 10 tickets first):
+
+```bash
+docker compose exec web python scripts/concurrent_booking_demo.py 1 http://localhost:8000 100
+```
 
 ## Project layout
 
 ```
-config/                 settings, root URLs, WSGI
-events/                 the API app
-  models.py             Event, Booking
-  services.py           booking rules + locking (used by API and website)
-  serializers.py        JSON in/out
-  views.py              API endpoints (function-based views)
-  urls.py               /api/... routes
-  admin.py              organizer admin panel
-  tests.py              API + concurrency tests
-pages/                  the website (Django templates)
-  views.py, forms.py, urls.py, templates/, tests.py
-k8s/                    Kubernetes manifests
-scripts/                concurrent booking demo
-Dockerfile, docker-compose.yml
+config/            settings, urls, wsgi (Gunicorn), asgi (WebSockets), celery
+events/
+  models.py        Event, Booking, WaitlistEntry
+  services.py      all booking rules
+  views.py         API
+  serializers.py
+  tasks.py         Celery tasks
+  consumers.py     WebSocket
+  realtime.py      sends ticket count to WebSocket
+  throttles.py     booking rate limit
+  qr.py            QR code image
+  admin.py
+  tests.py
+pages/             website (Django templates)
+k8s/               Kubernetes
+scripts/           concurrency demo
 ```
 
-## Adding a new feature
-
-1. A new rule about bookings → add it to `events/services.py` (both API and website get it).
-2. A new field → `models.py`, then `python manage.py makemigrations`, then add it to the serializer.
-3. A new endpoint → a function in `views.py` + a line in `urls.py` + a test in `tests.py`.
+To add a new booking rule, change `events/services.py`. The API and the website both use it.

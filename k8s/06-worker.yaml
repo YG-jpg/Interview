@@ -1,0 +1,26 @@
+# Celery worker: expires old reservations every 30 s and handles the waiting list.
+# Only 1 replica, because -B also runs the scheduler and it must run only once.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: event-booking:latest
+          imagePullPolicy: IfNotPresent
+          command: ["celery", "-A", "config", "worker", "-B", "--loglevel=info"]
+          envFrom:
+            - configMapRef:
+                name: event-booking-config
+            - secretRef:
+                name: event-booking-secret

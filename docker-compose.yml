@@ -1,7 +1,9 @@
-# Simple way to run everything on your own computer: docker compose up --build
+# Run everything on your computer: docker compose up --build
 services:
   db:
     image: postgres:17
+    # the test with 100 threads opens 100+ connections (default limit is 100)
+    command: ["postgres", "-c", "max_connections=200"]
     environment:
       POSTGRES_DB: events
       POSTGRES_USER: events
@@ -13,20 +15,15 @@ services:
       interval: 2s
       retries: 15
 
+  redis:
+    image: redis:7
+
+  # Django website + API (Gunicorn, 2 processes x 4 threads)
   web:
     build: .
     ports:
       - "8000:8000"
-    environment:
-      DEBUG: "1"
-      DB_HOST: db
-      DB_NAME: events
-      DB_USER: events
-      DB_PASSWORD: events
-      DJANGO_SUPERUSER_USERNAME: admin
-      DJANGO_SUPERUSER_PASSWORD: admin
-      DJANGO_SUPERUSER_EMAIL: admin@example.com
-    # Before the server starts: create the tables and the admin user (if it doesn't exist yet).
+    env_file: dev.env
     command: >
       sh -c "python manage.py migrate &&
              (python manage.py createsuperuser --noinput || true) &&
@@ -36,6 +33,30 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
+
+  # Celery: background tasks (expire reservations, waiting list). -B also runs the scheduler.
+  worker:
+    build: .
+    env_file: dev.env
+    command: celery -A config worker -B --loglevel=info
+    volumes:
+      - .:/app
+    depends_on:
+      - web
+
+  # WebSocket server for the live ticket count
+  websocket:
+    build: .
+    ports:
+      - "8001:8001"
+    env_file: dev.env
+    command: daphne -b 0.0.0.0 -p 8001 config.asgi:application
+    volumes:
+      - .:/app
+    depends_on:
+      - web
 
 volumes:
   db_data:

@@ -3,4 +3,9 @@ djangorestframework==3.16.1
 psycopg[binary]==3.2.10
 gunicorn==23.0.0
 whitenoise==6.9.0
+celery[redis]==5.5.3
+channels==4.2.2
+channels-redis==4.2.1
+daphne==4.1.2
+qrcode[pil]==8.2
 requests==2.32.5

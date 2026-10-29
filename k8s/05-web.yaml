@@ -21,13 +21,10 @@ spec:
           ports:
             - containerPort: 8000
           envFrom:
+            - configMapRef:
+                name: event-booking-config
             - secretRef:
                 name: event-booking-secret
-          env:
-            - name: DB_HOST
-              value: postgres
-            - name: DEBUG
-              value: "0"
           # The pod gets traffic only when the home page answers (DB is up and migrated).
           readinessProbe:
             httpGet:

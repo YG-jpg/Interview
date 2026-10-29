@@ -1,4 +1,15 @@
-# Passwords and keys. In a real project these would not be stored in git.
+# Settings that are the same for every Django pod
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: event-booking-config
+data:
+  DB_HOST: postgres
+  REDIS_URL: redis://redis:6379/0
+  DEBUG: "0"
+  WEBSOCKET_PORT: "30081"
+---
+# Passwords. In a real project these would not be in git.
 apiVersion: v1
 kind: Secret
 metadata:

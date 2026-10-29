@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -17,6 +18,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "channels",
     "events",
     "pages",
 ]
@@ -49,6 +51,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "config.wsgi.application"
+ASGI_APPLICATION = "config.asgi.application"
 
 DATABASES = {
     "default": {
@@ -86,4 +89,50 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    # Rate limiting. The counters are kept in Redis (CACHES below), so the limit
+    # is the same for all Gunicorn processes and all Kubernetes pods.
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "200/minute",
+        "user": "300/minute",
+        "bookings": "10/minute",
+    },
 }
+
+# Redis is used for 3 things: rate limit counters, the Celery task queue
+# and sending WebSocket messages between processes.
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": REDIS_URL,
+    }
+}
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {"hosts": [REDIS_URL]},
+    }
+}
+
+CELERY_BROKER_URL = REDIS_URL
+CELERY_BEAT_SCHEDULE = {
+    "release-expired-bookings": {
+        "task": "events.tasks.release_expired_bookings",
+        "schedule": 30.0,  # seconds
+    },
+}
+
+# Port of the WebSocket server (daphne). The event page connects to it.
+WEBSOCKET_PORT = os.environ.get("WEBSOCKET_PORT", "8001")
+
+# Tests don't need a running Redis or Celery worker.
+if "test" in sys.argv:
+    CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+    CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
+    CELERY_TASK_ALWAYS_EAGER = True

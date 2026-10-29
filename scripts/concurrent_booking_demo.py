@@ -6,8 +6,8 @@ At the end we check that the event was not overbooked.
 
 Usage (the app must be running):
     python scripts/concurrent_booking_demo.py <event_id> [base_url] [users]
-Example:
-    python scripts/concurrent_booking_demo.py 1 http://localhost:8000 30
+Example (an event with 10 tickets, 100 users):
+    python scripts/concurrent_booking_demo.py 1 http://localhost:8000 100
 """
 import sys
 import uuid
@@ -32,12 +32,11 @@ def book_one_ticket(base_url, event_id, auth):
 def main():
     event_id = int(sys.argv[1])
     base_url = sys.argv[2] if len(sys.argv) > 2 else "http://localhost:8000"
-    users_count = int(sys.argv[3]) if len(sys.argv) > 3 else 30
-
-    users = [create_user(base_url) for _ in range(users_count)]
+    users_count = int(sys.argv[3]) if len(sys.argv) > 3 else 100
 
     # All users book at the same time, each one in its own thread.
     with ThreadPoolExecutor(max_workers=users_count) as pool:
+        users = list(pool.map(lambda _: create_user(base_url), range(users_count)))
         futures = [pool.submit(book_one_ticket, base_url, event_id, auth) for auth in users]
         results = [future.result() for future in futures]
 

@@ -1,9 +1,6 @@
-"""
-HTML pages for the website.
+import uuid
 
-The booking rules are not here. They live in events/services.py, and these
-views only call them and show the result to the user.
-"""
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
@@ -11,8 +8,8 @@ from django.contrib.auth.forms import UserCreationForm
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
+from events import services
 from events.models import Event
-from events.services import BookingError, book_tickets, cancel_booking
 
 from .forms import BookingForm
 
@@ -24,8 +21,16 @@ def event_list(request):
 
 def event_detail(request, pk):
     event = get_object_or_404(Event, pk=pk)
-    form = BookingForm()
-    return render(request, "pages/event_detail.html", {"event": event, "form": form})
+    form = BookingForm(initial={"idempotency_key": uuid.uuid4()})
+    on_waitlist = False
+    if request.user.is_authenticated:
+        on_waitlist = event.waitlist.filter(user=request.user).exists()
+    return render(request, "pages/event_detail.html", {
+        "event": event,
+        "form": form,
+        "on_waitlist": on_waitlist,
+        "websocket_port": settings.WEBSOCKET_PORT,
+    })
 
 
 @login_required
@@ -37,13 +42,17 @@ def book_event(request, pk):
         return redirect("event_detail", pk=pk)
 
     tickets = form.cleaned_data["tickets"]
+    key = form.cleaned_data["idempotency_key"]
     try:
-        book_tickets(request.user, pk, tickets)
-    except BookingError as e:
+        booking, created = services.reserve_tickets(request.user, pk, tickets, idempotency_key=key)
+    except services.BookingError as e:
         messages.error(request, str(e))
         return redirect("event_detail", pk=pk)
 
-    messages.success(request, f"Booked {tickets} tickets.")
+    if created:
+        messages.success(request, f"Reserved {tickets} tickets. Confirm within {services.RESERVATION_MINUTES} minutes.")
+    else:
+        messages.info(request, "This reservation was already made.")
     return redirect("my_bookings")
 
 
@@ -55,15 +64,50 @@ def my_bookings(request):
 
 @login_required
 @require_POST
-def cancel_booking_view(request, pk):
-    # Named "..._view" so it does not hide the cancel_booking service function.
+def confirm_booking_view(request, pk):
     try:
-        cancel_booking(request.user, pk)
-    except BookingError as e:
+        services.confirm_booking(request.user, pk)
+    except services.BookingError as e:
+        messages.error(request, str(e))
+    else:
+        messages.success(request, "Booking confirmed.")
+    return redirect("my_bookings")
+
+
+@login_required
+@require_POST
+def cancel_booking_view(request, pk):
+    try:
+        services.cancel_booking(request.user, pk)
+    except services.BookingError as e:
         messages.error(request, str(e))
     else:
         messages.success(request, "Booking cancelled.")
     return redirect("my_bookings")
+
+
+@login_required
+@require_POST
+def join_waitlist_view(request, pk):
+    try:
+        services.join_waitlist(request.user, pk)
+    except services.BookingError as e:
+        messages.error(request, str(e))
+    else:
+        messages.success(request, "You joined the waiting list.")
+    return redirect("event_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def leave_waitlist_view(request, pk):
+    try:
+        services.leave_waitlist(request.user, pk)
+    except services.BookingError as e:
+        messages.error(request, str(e))
+    else:
+        messages.success(request, "You left the waiting list.")
+    return redirect("event_detail", pk=pk)
 
 
 def register(request):

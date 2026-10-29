@@ -3,3 +3,4 @@ __pycache__/
 .git
 staticfiles/
 k8s/
+celerybeat-schedule*

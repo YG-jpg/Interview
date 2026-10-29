@@ -11,7 +11,7 @@
         <th>Event</th>
         <th>Date</th>
         <th>Tickets</th>
-        <th></th>
+        <th>Status</th>
     </tr>
     {% for booking in bookings %}
     <tr>
@@ -19,10 +19,22 @@
         <td>{{ booking.event.starts_at|date:"Y-m-d H:i" }}</td>
         <td>{{ booking.tickets }}</td>
         <td>
-            <form method="post" action="{% url 'cancel_booking' booking.pk %}">
-                {% csrf_token %}
-                <button type="submit">Cancel</button>
-            </form>
+            {{ booking.get_status_display }}
+            {% if booking.status == "pending" %}
+                (expires at {{ booking.expires_at|time:"H:i" }})
+                <form method="post" action="{% url 'confirm_booking' booking.pk %}">
+                    {% csrf_token %}
+                    <button type="submit">Confirm</button>
+                </form>
+            {% elif booking.status == "confirmed" %}
+                <br><img src="/api/bookings/{{ booking.id }}/qr/" alt="QR code" width="120" height="120">
+            {% endif %}
+            {% if booking.status == "pending" or booking.status == "confirmed" %}
+                <form method="post" action="{% url 'cancel_booking' booking.pk %}">
+                    {% csrf_token %}
+                    <button type="submit">Cancel</button>
+                </form>
+            {% endif %}
         </td>
     </tr>
     {% endfor %}

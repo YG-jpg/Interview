@@ -12,7 +12,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ["id", "username", "password"]
 
     def create(self, validated_data):
-        # create_user() saves the password as a hash, never as plain text.
+        # create_user() saves a hash of the password, not the password itself
         return User.objects.create_user(**validated_data)
 
 
@@ -26,15 +26,17 @@ class EventSerializer(serializers.ModelSerializer):
 
 
 class BookingSerializer(serializers.ModelSerializer):
-    """Used to show a booking (output)."""
     event = EventSerializer(read_only=True)
 
     class Meta:
         model = Booking
-        fields = ["id", "event", "tickets", "created_at"]
+        fields = ["id", "event", "tickets", "status", "expires_at", "created_at"]
 
 
 class CreateBookingSerializer(serializers.Serializer):
-    """Used to read the body of POST /api/bookings/ (input)."""
     event = serializers.IntegerField()
+    tickets = serializers.IntegerField(min_value=1, default=1)
+
+
+class WaitlistSerializer(serializers.Serializer):
     tickets = serializers.IntegerField(min_value=1, default=1)
