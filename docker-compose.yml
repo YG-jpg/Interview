@@ -1,0 +1,41 @@
+# Simple way to run everything on your own computer: docker compose up --build
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: events
+      POSTGRES_USER: events
+      POSTGRES_PASSWORD: events
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "events"]
+      interval: 2s
+      retries: 15
+
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DEBUG: "1"
+      DB_HOST: db
+      DB_NAME: events
+      DB_USER: events
+      DB_PASSWORD: events
+      DJANGO_SUPERUSER_USERNAME: admin
+      DJANGO_SUPERUSER_PASSWORD: admin
+      DJANGO_SUPERUSER_EMAIL: admin@example.com
+    # Before the server starts: create the tables and the admin user (if it doesn't exist yet).
+    command: >
+      sh -c "python manage.py migrate &&
+             (python manage.py createsuperuser --noinput || true) &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --threads 4 --reload"
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db_data:

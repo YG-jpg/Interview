@@ -1,0 +1,24 @@
+# Runs once: creates the tables and the admin user, then stops.
+# It is a Job (not part of the web pods) so that 2 web pods don't run migrations at the same time.
+# If Postgres is not ready yet, the Job fails and Kubernetes simply tries again.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: event-booking:latest
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "python manage.py migrate && (python manage.py createsuperuser --noinput || true)"]
+          envFrom:
+            - secretRef:
+                name: event-booking-secret
+          env:
+            - name: DB_HOST
+              value: postgres

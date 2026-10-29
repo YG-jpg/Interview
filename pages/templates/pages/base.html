@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Event Booking{% endblock %}</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 0 16px; }
+        nav { padding: 12px 0; border-bottom: 1px solid #ccc; margin-bottom: 16px; }
+        nav a { margin-right: 12px; }
+        nav form { display: inline; }
+        .message { padding: 8px; margin-bottom: 8px; border: 1px solid #ccc; }
+        .message.success { background: #e6ffe6; }
+        .message.error { background: #ffe6e6; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="{% url 'event_list' %}">Events</a>
+        {% if user.is_authenticated %}
+            <a href="{% url 'my_bookings' %}">My bookings</a>
+            Hi {{ user.username }}
+            <form method="post" action="{% url 'logout' %}">
+                {% csrf_token %}
+                <button type="submit">Logout</button>
+            </form>
+        {% else %}
+            <a href="{% url 'login' %}">Login</a>
+            <a href="{% url 'register' %}">Register</a>
+        {% endif %}
+    </nav>
+
+    {% for message in messages %}
+        <div class="message {{ message.tags }}">{{ message }}</div>
+    {% endfor %}
+
+    {% block content %}{% endblock %}
+</body>
+</html>

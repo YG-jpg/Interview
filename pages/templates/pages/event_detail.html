@@ -1,0 +1,23 @@
+{% extends "pages/base.html" %}
+
+{% block title %}{{ event.title }}{% endblock %}
+
+{% block content %}
+<h1>{{ event.title }}</h1>
+
+<p><b>Date:</b> {{ event.starts_at|date:"Y-m-d H:i" }}</p>
+<p><b>Location:</b> {{ event.location }}</p>
+<p><b>Tickets:</b> {{ event.booked_tickets }} of {{ event.total_tickets }} booked, {{ event.available_tickets }} left</p>
+<p>{{ event.description|linebreaksbr }}</p>
+
+<h2>Book tickets</h2>
+{% if user.is_authenticated %}
+    <form method="post" action="{% url 'book_event' event.pk %}">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Book</button>
+    </form>
+{% else %}
+    <p><a href="{% url 'login' %}?next={{ request.path|urlencode }}">Log in</a> to book tickets.</p>
+{% endif %}
+{% endblock %}

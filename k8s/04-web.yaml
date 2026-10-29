@@ -1,0 +1,50 @@
+# The Django app: 2 pods, each running Gunicorn with 2 processes x 4 threads.
+# Bookings stay correct across all pods and threads because the lock is in the database.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          image: event-booking:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: event-booking-secret
+          env:
+            - name: DB_HOST
+              value: postgres
+            - name: DEBUG
+              value: "0"
+          # The pod gets traffic only when the home page answers (DB is up and migrated).
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            periodSeconds: 5
+---
+# Opens the app on http://localhost:30080
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  type: NodePort
+  selector:
+    app: web
+  ports:
+    - port: 8000
+      targetPort: 8000
+      nodePort: 30080

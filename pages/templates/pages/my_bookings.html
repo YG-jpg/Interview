@@ -1,0 +1,33 @@
+{% extends "pages/base.html" %}
+
+{% block title %}My bookings{% endblock %}
+
+{% block content %}
+<h1>My bookings</h1>
+
+{% if bookings %}
+<table>
+    <tr>
+        <th>Event</th>
+        <th>Date</th>
+        <th>Tickets</th>
+        <th></th>
+    </tr>
+    {% for booking in bookings %}
+    <tr>
+        <td><a href="{% url 'event_detail' booking.event.pk %}">{{ booking.event.title }}</a></td>
+        <td>{{ booking.event.starts_at|date:"Y-m-d H:i" }}</td>
+        <td>{{ booking.tickets }}</td>
+        <td>
+            <form method="post" action="{% url 'cancel_booking' booking.pk %}">
+                {% csrf_token %}
+                <button type="submit">Cancel</button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<p>You have no bookings. <a href="{% url 'event_list' %}">See events</a>.</p>
+{% endif %}
+{% endblock %}
