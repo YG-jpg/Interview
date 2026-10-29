@@ -1,3 +1,4 @@
+# Главните адреси: /admin/ - админ панел, /api/ - REST API, всичко останало - сайтът.
 from django.contrib import admin
 from django.urls import include, path
 

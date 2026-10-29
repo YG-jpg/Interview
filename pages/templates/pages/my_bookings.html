@@ -3,9 +3,11 @@
 {% block title %}My bookings{% endblock %}
 
 {% block content %}
+{# Моите резервации. Цветът на етикета идва от CSS класа badge-<статус>. #}
 <h1>My bookings</h1>
 
 {% if bookings %}
+<div class="card table-wrap">
 <table>
     <tr>
         <th>Event</th>
@@ -15,31 +17,35 @@
     </tr>
     {% for booking in bookings %}
     <tr>
-        <td><a href="{% url 'event_detail' booking.event.pk %}">{{ booking.event.title }}</a></td>
+        <td><a href="{% url 'event_detail' booking.event.pk %}"><b>{{ booking.event.title }}</b></a></td>
         <td>{{ booking.event.starts_at|date:"Y-m-d H:i" }}</td>
         <td>{{ booking.tickets }}</td>
         <td>
-            {{ booking.get_status_display }}
+            <span class="badge badge-{{ booking.status }}">{{ booking.get_status_display }}</span>
+            {# Чакаща резервация - бутон Confirm. Потвърдена - QR кодът на билета. #}
             {% if booking.status == "pending" %}
-                (expires at {{ booking.expires_at|time:"H:i" }})
+                <span class="meta">(expires at {{ booking.expires_at|time:"H:i" }})</span>
+                <br>
                 <form method="post" action="{% url 'confirm_booking' booking.pk %}">
                     {% csrf_token %}
-                    <button type="submit">Confirm</button>
+                    <button type="submit" class="btn-green">Confirm</button>
                 </form>
             {% elif booking.status == "confirmed" %}
-                <br><img src="/api/bookings/{{ booking.id }}/qr/" alt="QR code" width="120" height="120">
+                <br><img src="/api/bookings/{{ booking.id }}/qr/" alt="QR code" width="120" height="120" style="margin-top: 8px; border-radius: 8px;">
+                <br>
             {% endif %}
             {% if booking.status == "pending" or booking.status == "confirmed" %}
                 <form method="post" action="{% url 'cancel_booking' booking.pk %}">
                     {% csrf_token %}
-                    <button type="submit">Cancel</button>
+                    <button type="submit" class="btn-danger">Cancel</button>
                 </form>
             {% endif %}
         </td>
     </tr>
     {% endfor %}
 </table>
+</div>
 {% else %}
-<p>You have no bookings. <a href="{% url 'event_list' %}">See events</a>.</p>
+<div class="card empty">You have no bookings. <a href="{% url 'event_list' %}">See events</a>.</div>
 {% endif %}
 {% endblock %}

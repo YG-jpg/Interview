@@ -1,3 +1,4 @@
+# Адресите на API-то. Всички започват с /api/ (виж config/urls.py).
 from django.urls import path
 
 from . import views

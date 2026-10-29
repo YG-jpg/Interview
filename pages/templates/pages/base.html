@@ -5,37 +5,176 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Event Booking{% endblock %}</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 0 16px; }
-        nav { padding: 12px 0; border-bottom: 1px solid #ccc; margin-bottom: 16px; }
-        nav a { margin-right: 12px; }
-        nav form { display: inline; }
-        .message { padding: 8px; margin-bottom: 8px; border: 1px solid #ccc; }
-        .message.success { background: #e6ffe6; }
-        .message.error { background: #ffe6e6; }
+        /* Цветовете на целия сайт - смени ги тук и се сменят навсякъде. */
+        :root {
+            --primary: #6d28d9;
+            --primary-dark: #5b21b6;
+            --accent: #db2777;
+            --bg: #f5f3ff;
+            --card: #ffffff;
+            --text: #1f2937;
+            --muted: #6b7280;
+            --border: #e5e7eb;
+            --green: #059669;
+            --green-bg: #d1fae5;
+            --red: #dc2626;
+            --red-bg: #fee2e2;
+            --amber: #b45309;
+            --amber-bg: #fef3c7;
+            --blue: #1d4ed8;
+            --blue-bg: #dbeafe;
+            --radius: 14px;
+            --shadow: 0 4px 16px rgba(76, 29, 149, 0.08);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+        a { color: var(--primary); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        h1 { margin: 0 0 20px; font-size: 1.9rem; }
+        h2 { font-size: 1.25rem; margin: 0 0 12px; }
+
+        /* Горна лента */
+        header {
+            background: linear-gradient(120deg, var(--primary), var(--accent));
+            color: #fff;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+        }
+        nav {
+            max-width: 960px; margin: 0 auto; padding: 14px 16px;
+            display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+        }
+        nav a { color: #fff; font-weight: 500; opacity: 0.9; }
+        nav a:hover { opacity: 1; text-decoration: none; }
+        nav .brand { font-size: 1.2rem; font-weight: 700; opacity: 1; margin-right: auto; }
+        nav .user { opacity: 0.85; }
+        nav form { display: inline; margin: 0; }
+        nav button {
+            background: rgba(255, 255, 255, 0.18); color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+        nav button:hover { background: rgba(255, 255, 255, 0.3); }
+
+        main { max-width: 960px; margin: 0 auto; padding: 28px 16px 48px; }
+
+        /* Бутони */
+        button, .btn {
+            display: inline-block;
+            font: inherit; font-weight: 600;
+            padding: 8px 18px; border-radius: 999px; border: none;
+            background: var(--primary); color: #fff; cursor: pointer;
+            transition: background 0.15s, transform 0.1s;
+        }
+        button:hover, .btn:hover { background: var(--primary-dark); text-decoration: none; }
+        button:active { transform: scale(0.97); }
+        .btn-green { background: var(--green); }
+        .btn-green:hover { background: #047857; }
+        .btn-light { background: #ede9fe; color: var(--primary); }
+        .btn-light:hover { background: #ddd6fe; }
+        .btn-danger { background: #fff; color: var(--red); border: 1px solid #fca5a5; }
+        .btn-danger:hover { background: var(--red-bg); }
+
+        /* Съобщения (успех, грешка, информация) */
+        .message {
+            padding: 12px 16px; margin-bottom: 12px; border-radius: 10px;
+            border-left: 5px solid var(--primary); background: #ede9fe;
+        }
+        .message.success { background: var(--green-bg); border-color: var(--green); }
+        .message.error { background: var(--red-bg); border-color: var(--red); }
+        .message.info { background: var(--blue-bg); border-color: var(--blue); }
+
+        /* Карти (бели кутии със сянка) */
+        .card {
+            background: var(--card); border-radius: var(--radius);
+            box-shadow: var(--shadow); padding: 22px;
+        }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 20px; }
+        .event-card { display: flex; flex-direction: column; gap: 10px; transition: transform 0.15s, box-shadow 0.15s; }
+        .event-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(76, 29, 149, 0.15); }
+        .event-card h3 { margin: 0; font-size: 1.15rem; }
+        .meta { color: var(--muted); font-size: 0.92rem; }
+        .date-chip {
+            align-self: flex-start;
+            background: linear-gradient(120deg, var(--primary), var(--accent));
+            color: #fff; font-size: 0.8rem; font-weight: 600;
+            padding: 3px 10px; border-radius: 999px;
+        }
+
+        /* Лента колко билета са продадени */
+        .progress { height: 8px; background: #ede9fe; border-radius: 999px; overflow: hidden; }
+        .progress span {
+            display: block; height: 100%;
+            background: linear-gradient(90deg, #8b5cf6, var(--accent));
+            border-radius: 999px; transition: width 0.4s;
+        }
+
+        /* Цветни етикети за статус */
+        .badge {
+            display: inline-block; font-size: 0.78rem; font-weight: 700;
+            padding: 2px 10px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.03em;
+        }
+        .badge-pending { background: var(--amber-bg); color: var(--amber); }
+        .badge-confirmed { background: var(--green-bg); color: var(--green); }
+        .badge-cancelled, .badge-expired { background: #f3f4f6; color: var(--muted); }
+        .badge-soldout { background: var(--red-bg); color: var(--red); }
+
+        /* Таблици */
+        .table-wrap { overflow-x: auto; padding: 0; }
         table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
+        th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+        th { background: #f5f3ff; color: var(--primary-dark); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; }
+        tr:last-child td { border-bottom: none; }
+        td form { display: inline-block; margin: 6px 6px 0 0; }
+
+        /* Форми (Django form.as_p) */
+        form p { margin: 0 0 14px; }
+        form label { display: block; font-weight: 600; margin-bottom: 4px; }
+        input[type=text], input[type=password], input[type=number], input[type=email] {
+            width: 100%; max-width: 360px; padding: 9px 12px; font: inherit;
+            border: 1px solid #d1d5db; border-radius: 10px; background: #fff;
+        }
+        input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(109, 40, 217, 0.2); }
+        .helptext, form ul { color: var(--muted); font-size: 0.85rem; }
+        .errorlist { color: var(--red); padding-left: 18px; }
+
+        .auth-card { max-width: 440px; margin: 20px auto; }
+        .empty { text-align: center; color: var(--muted); padding: 40px; }
     </style>
 </head>
 <body>
-    <nav>
-        <a href="{% url 'event_list' %}">Events</a>
-        {% if user.is_authenticated %}
-            <a href="{% url 'my_bookings' %}">My bookings</a>
-            Hi {{ user.username }}
-            <form method="post" action="{% url 'logout' %}">
-                {% csrf_token %}
-                <button type="submit">Logout</button>
-            </form>
-        {% else %}
-            <a href="{% url 'login' %}">Login</a>
-            <a href="{% url 'register' %}">Register</a>
-        {% endif %}
-    </nav>
+    {# Основният шаблон: всички страници го разширяват и попълват block content. #}
+    {# Горна лента: менюто е различно за влезли и невлезли потребители. #}
+    <header>
+        <nav>
+            <a class="brand" href="{% url 'event_list' %}">🎟️ Event Booking</a>
+            <a href="{% url 'event_list' %}">Events</a>
+            {% if user.is_authenticated %}
+                <a href="{% url 'my_bookings' %}">My bookings</a>
+                <span class="user">Hi {{ user.username }}</span>
+                {# Logout е POST форма с CSRF токен, за да не може друг сайт да те изпише. #}
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button type="submit">Logout</button>
+                </form>
+            {% else %}
+                <a href="{% url 'login' %}">Login</a>
+                <a href="{% url 'register' %}">Register</a>
+            {% endif %}
+        </nav>
+    </header>
 
-    {% for message in messages %}
-        <div class="message {{ message.tags }}">{{ message }}</div>
-    {% endfor %}
+    <main>
+        {# Съобщенията от views (messages.success / messages.error / messages.info). #}
+        {% for message in messages %}
+            <div class="message {{ message.tags }}">{{ message }}</div>
+        {% endfor %}
 
-    {% block content %}{% endblock %}
+        {% block content %}{% endblock %}
+    </main>
 </body>
 </html>

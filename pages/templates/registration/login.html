@@ -3,14 +3,17 @@
 {% block title %}Login{% endblock %}
 
 {% block content %}
-<h1>Login</h1>
+{# Вход. form е формата на вградения LoginView. "next" е страницата, към която се връщаме след вход. #}
+<div class="card auth-card">
+    <h1>Login</h1>
 
-<form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <input type="hidden" name="next" value="{{ next }}">
-    <button type="submit">Login</button>
-</form>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <input type="hidden" name="next" value="{{ next }}">
+        <button type="submit">Login</button>
+    </form>
 
-<p>No account? <a href="{% url 'register' %}">Register</a>.</p>
+    <p class="meta">No account? <a href="{% url 'register' %}">Register</a>.</p>
+</div>
 {% endblock %}

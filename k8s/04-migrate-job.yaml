@@ -1,6 +1,6 @@
-# Runs once: creates the tables and the admin user, then stops.
-# It is a Job (not part of the web pods) so that 2 web pods don't run migrations at the same time.
-# If Postgres is not ready yet, the Job fails and Kubernetes simply tries again.
+# Пуска се веднъж: създава таблиците и admin потребителя, после спира.
+# Job е (а не част от web pod-овете), за да не пускат 2 web pod-а миграции едновременно.
+# Ако Postgres още не е готов, Job-ът се проваля и Kubernetes просто опитва пак.
 apiVersion: batch/v1
 kind: Job
 metadata:

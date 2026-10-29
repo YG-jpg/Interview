@@ -3,11 +3,16 @@
 {% block title %}Register{% endblock %}
 
 {% block content %}
-<h1>Register</h1>
+{# Регистрация. form е UserCreationForm на Django: проверява името и паролата. #}
+<div class="card auth-card">
+    <h1>Register</h1>
 
-<form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">Register</button>
-</form>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Register</button>
+    </form>
+
+    <p class="meta">Already have an account? <a href="{% url 'login' %}">Login</a>.</p>
+</div>
 {% endblock %}

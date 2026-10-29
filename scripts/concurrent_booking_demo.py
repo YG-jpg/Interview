@@ -1,12 +1,12 @@
 """
-Demo: many users try to book the same event at the same moment.
+Демо: много потребители се опитват да резервират едно и също събитие в един и същи момент.
 
-Each user runs in its own thread and sends a real HTTP request to the API.
-At the end we check that the event was not overbooked.
+Всеки потребител работи в собствена нишка (thread) и праща истинска HTTP заявка към API-то.
+Накрая проверяваме, че събитието не е свръхрезервирано.
 
-Usage (the app must be running):
+Употреба (приложението трябва да работи):
     python scripts/concurrent_booking_demo.py <event_id> [base_url] [users]
-Example (an event with 10 tickets, 100 users):
+Пример (събитие с 10 билета, 100 потребители):
     python scripts/concurrent_booking_demo.py 1 http://localhost:8000 100
 """
 import sys
@@ -17,6 +17,7 @@ import requests
 
 
 def create_user(base_url):
+    """Регистрира нов случаен потребител през API-то и връща (име, парола)."""
     username = "demo_" + uuid.uuid4().hex[:8]
     password = "secret123"
     response = requests.post(f"{base_url}/api/register/", json={"username": username, "password": password})
@@ -25,6 +26,7 @@ def create_user(base_url):
 
 
 def book_one_ticket(base_url, event_id, auth):
+    """Опитва да резервира 1 билет. Връща HTTP кода: 201 - успех, 400 - няма билети."""
     response = requests.post(f"{base_url}/api/bookings/", json={"event": event_id, "tickets": 1}, auth=auth)
     return response.status_code
 
@@ -34,7 +36,7 @@ def main():
     base_url = sys.argv[2] if len(sys.argv) > 2 else "http://localhost:8000"
     users_count = int(sys.argv[3]) if len(sys.argv) > 3 else 100
 
-    # All users book at the same time, each one in its own thread.
+    # Всички потребители резервират едновременно, всеки в собствена нишка.
     with ThreadPoolExecutor(max_workers=users_count) as pool:
         users = list(pool.map(lambda _: create_user(base_url), range(users_count)))
         futures = [pool.submit(book_one_ticket, base_url, event_id, auth) for auth in users]

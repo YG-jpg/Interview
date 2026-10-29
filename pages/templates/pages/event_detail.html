@@ -3,42 +3,58 @@
 {% block title %}{{ event.title }}{% endblock %}
 
 {% block content %}
-<h1>{{ event.title }}</h1>
+{# Страница на събитие: информация отгоре и форма за резервация отдолу. #}
+<div class="card" style="margin-bottom: 20px;">
+    <span class="date-chip">{{ event.starts_at|date:"Y-m-d H:i" }}</span>
+    <h1 style="margin-top: 12px;">{{ event.title }}</h1>
+    <p class="meta">📍 {{ event.location }}</p>
+    <p><b>Tickets:</b> <span id="tickets-left">{{ event.available_tickets }}</span> tickets left (of {{ event.total_tickets }})</p>
+    <div class="progress" style="margin-bottom: 16px;">
+        <span id="tickets-bar" style="width: {% widthratio event.booked_tickets event.total_tickets 100 %}%"></span>
+    </div>
+    <p>{{ event.description|linebreaksbr }}</p>
+</div>
 
-<p><b>Date:</b> {{ event.starts_at|date:"Y-m-d H:i" }}</p>
-<p><b>Location:</b> {{ event.location }}</p>
-<p><b>Tickets:</b> <span id="tickets-left">{{ event.available_tickets }}</span> tickets left (of {{ event.total_tickets }})</p>
-<p>{{ event.description|linebreaksbr }}</p>
+{# Какво вижда потребителят: линк за login, листа на чакащите или форма за резервация. #}
+<div class="card">
+    <h2>Book tickets</h2>
+    {% if not user.is_authenticated %}
+        <p><a class="btn" href="{% url 'login' %}?next={{ request.path|urlencode }}">Log in</a> to book tickets.</p>
+    {% elif on_waitlist %}
+        <p>You are on the waiting list.</p>
+        <form method="post" action="{% url 'leave_waitlist' event.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn-danger">Leave</button>
+        </form>
+    {% elif event.available_tickets == 0 %}
+        <p><span class="badge badge-soldout">Sold out</span> Join the waiting list and we will reserve a ticket for you when one is free.</p>
+        <form method="post" action="{% url 'join_waitlist' event.pk %}">
+            {% csrf_token %}
+            <button type="submit">Join waiting list</button>
+        </form>
+    {% else %}
+        <form method="post" action="{% url 'book_event' event.pk %}">
+            {% csrf_token %}
+            {# csrf_token е скрит ключ - без него Django отказва формата (защита от CSRF). #}
+            {{ form.as_p }}
+            <button type="submit">Reserve</button>
+        </form>
+        <p class="meta">Tickets are held for 5 minutes, then you need to confirm.</p>
+    {% endif %}
+</div>
 
-<h2>Book tickets</h2>
-{% if not user.is_authenticated %}
-    <p><a href="{% url 'login' %}?next={{ request.path|urlencode }}">Log in</a> to book tickets.</p>
-{% elif on_waitlist %}
-    <p>You are on the waiting list.</p>
-    <form method="post" action="{% url 'leave_waitlist' event.pk %}">
-        {% csrf_token %}
-        <button type="submit">Leave</button>
-    </form>
-{% elif event.available_tickets == 0 %}
-    <p>Sold out. Join the waiting list and we will reserve a ticket for you when one is free.</p>
-    <form method="post" action="{% url 'join_waitlist' event.pk %}">
-        {% csrf_token %}
-        <button type="submit">Join waiting list</button>
-    </form>
-{% else %}
-    <form method="post" action="{% url 'book_event' event.pk %}">
-        {% csrf_token %}
-        {{ form.as_p }}
-        <button type="submit">Reserve</button>
-    </form>
-    <p>Tickets are held for 5 minutes, then you need to confirm.</p>
-{% endif %}
-
+{# WebSocket: когато някой резервира или откаже, сървърът праща новия брой билети #}
+{# и обновяваме числото и лентата без презареждане на страницата. #}
 <script>
+    var totalTickets = {{ event.total_tickets }};
     var socket = new WebSocket("ws://" + location.hostname + ":{{ websocket_port }}/ws/events/{{ event.id }}/");
     socket.onmessage = function (e) {
         var data = JSON.parse(e.data);
         document.getElementById("tickets-left").textContent = data.available_tickets;
+        if (totalTickets > 0) {
+            var booked = totalTickets - data.available_tickets;
+            document.getElementById("tickets-bar").style.width = (booked * 100 / totalTickets) + "%";
+        }
     };
 </script>
 {% endblock %}

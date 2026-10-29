@@ -4,3 +4,4 @@ __pycache__/
 staticfiles/
 k8s/
 celerybeat-schedule*
+.env

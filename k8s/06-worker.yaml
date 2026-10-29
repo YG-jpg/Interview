@@ -1,5 +1,5 @@
-# Celery worker: expires old reservations every 30 s and handles the waiting list.
-# Only 1 replica, because -B also runs the scheduler and it must run only once.
+# Celery worker: маркира изтеклите резервации на всеки 30 с и обработва листата на чакащите.
+# Само 1 реплика, защото -B пуска и графика (beat), а той трябва да върви само веднъж.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

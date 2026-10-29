@@ -1,4 +1,4 @@
-# The database: 1 Postgres pod with a disk (PersistentVolumeClaim) so data survives restarts.
+# Базата данни: 1 Postgres pod с диск (PersistentVolumeClaim), за да оцеляват данните при рестарт.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -30,9 +30,9 @@ spec:
             - containerPort: 5432
           env:
             - name: POSTGRES_DB
-              valueFrom: {secretKeyRef: {name: event-booking-secret, key: DB_NAME}}
+              valueFrom: {configMapKeyRef: {name: event-booking-config, key: DB_NAME}}
             - name: POSTGRES_USER
-              valueFrom: {secretKeyRef: {name: event-booking-secret, key: DB_USER}}
+              valueFrom: {configMapKeyRef: {name: event-booking-config, key: DB_USER}}
             - name: POSTGRES_PASSWORD
               valueFrom: {secretKeyRef: {name: event-booking-secret, key: DB_PASSWORD}}
             - name: PGDATA
@@ -49,7 +49,7 @@ spec:
           persistentVolumeClaim:
             claimName: postgres-data
 ---
-# Other pods reach the database at the host name "postgres".
+# Другите pod-ове стигат до базата на хост името "postgres".
 apiVersion: v1
 kind: Service
 metadata:

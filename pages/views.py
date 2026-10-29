@@ -1,3 +1,7 @@
+"""
+Сайтът (HTML страниците). Правилата за резервации са в events/services.py -
+тук само показваме страници, четем формите и показваме съобщения.
+"""
 import uuid
 
 from django.conf import settings
@@ -15,11 +19,14 @@ from .forms import BookingForm
 
 
 def event_list(request):
+    """Началната страница: списък със събития."""
     events = Event.objects.all()
     return render(request, "pages/event_list.html", {"events": events})
 
 
 def event_detail(request, pk):
+    """Страница на събитие с форма за резервация. Всеки път слагаме нов idempotency_key,
+    за да не се резервира два пъти при двоен клик."""
     event = get_object_or_404(Event, pk=pk)
     form = BookingForm(initial={"idempotency_key": uuid.uuid4()})
     on_waitlist = False
@@ -36,6 +43,8 @@ def event_detail(request, pk):
 @login_required
 @require_POST
 def book_event(request, pk):
+    """Изпращане на формата за резервация. @login_required - само за влезли потребители,
+    @require_POST - само POST заявки (те минават през CSRF проверката)."""
     form = BookingForm(request.POST)
     if not form.is_valid():
         messages.error(request, "Please enter a number of tickets (at least 1).")
@@ -58,6 +67,7 @@ def book_event(request, pk):
 
 @login_required
 def my_bookings(request):
+    """Моите резервации."""
     bookings = request.user.bookings.select_related("event")
     return render(request, "pages/my_bookings.html", {"bookings": bookings})
 
@@ -65,6 +75,7 @@ def my_bookings(request):
 @login_required
 @require_POST
 def confirm_booking_view(request, pk):
+    """Бутонът Confirm в "My bookings"."""
     try:
         services.confirm_booking(request.user, pk)
     except services.BookingError as e:
@@ -77,6 +88,7 @@ def confirm_booking_view(request, pk):
 @login_required
 @require_POST
 def cancel_booking_view(request, pk):
+    """Бутонът Cancel в "My bookings"."""
     try:
         services.cancel_booking(request.user, pk)
     except services.BookingError as e:
@@ -89,6 +101,7 @@ def cancel_booking_view(request, pk):
 @login_required
 @require_POST
 def join_waitlist_view(request, pk):
+    """Бутонът "Join waiting list" на разпродадено събитие."""
     try:
         services.join_waitlist(request.user, pk)
     except services.BookingError as e:
@@ -101,6 +114,7 @@ def join_waitlist_view(request, pk):
 @login_required
 @require_POST
 def leave_waitlist_view(request, pk):
+    """Бутонът "Leave" - излизане от листата на чакащите."""
     try:
         services.leave_waitlist(request.user, pk)
     except services.BookingError as e:
@@ -111,6 +125,15 @@ def leave_waitlist_view(request, pk):
 
 
 def register(request):
+    """
+    Регистрация през сайта. UserCreationForm (вградена в Django) проверява:
+    - потребителското име: само букви, цифри и @ . + - _ и да не е заето;
+    - двете пароли да съвпадат (паролата може да съдържа всякакви символи);
+    - силата на паролата според AUTH_PASSWORD_VALIDATORS в settings.py.
+    Паролата се пази като хеш, а заявките към базата са параметризирани - затова
+    специалните символи не могат да доведат до SQL injection.
+    След успешна регистрация потребителят влиза автоматично.
+    """
     if request.method == "POST":
         form = UserCreationForm(request.POST)
         if form.is_valid():

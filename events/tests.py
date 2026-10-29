@@ -1,3 +1,7 @@
+"""
+Тестове за API-то, правилата за резервации, админа, паралелните резервации и WebSocket.
+Пускат се с: docker compose run --rm web python manage.py test
+"""
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -24,6 +28,7 @@ from .models import Booking, Event, WaitlistEntry
 
 
 def make_event(total_tickets=10, days_from_now=7):
+    """Помощна функция: създава събитие след days_from_now дни (отрицателно = в миналото)."""
     return Event.objects.create(
         title="Rock Concert",
         location="Sofia",
@@ -33,19 +38,21 @@ def make_event(total_tickets=10, days_from_now=7):
 
 
 def reserve(user, event, tickets=1):
+    """Помощна функция: резервира билети и връща резервацията."""
     booking, created = services.reserve_tickets(user, event.id, tickets)
     return booking
 
 
 def active_tickets(event):
-    """Tickets in pending + confirmed bookings. Must always be equal to event.booked_tickets."""
+    """Билетите в pending + confirmed резервации. Трябва винаги да е равно на event.booked_tickets."""
     active = event.bookings.filter(status__in=[Booking.PENDING, Booking.CONFIRMED])
     return active.aggregate(total=Sum("tickets"))["total"] or 0
 
 
 class ApiTests(TestCase):
+    """Тестове на REST API-то (/api/...)."""
     def setUp(self):
-        cache.clear()  # rate limit counters
+        cache.clear()  # нулираме броячите за rate limit
         self.user = User.objects.create_user(username="ivan", password="secret123")
         self.client = APIClient()
         self.client.force_authenticate(self.user)
@@ -174,6 +181,7 @@ class ApiTests(TestCase):
 
 
 class ReservationTests(TestCase):
+    """Резервации за 5 минути: изтичане, потвърждение и листата на чакащите."""
     def setUp(self):
         self.user = User.objects.create_user(username="ivan", password="x")
         self.event = make_event(total_tickets=10)
@@ -208,7 +216,7 @@ class ReservationTests(TestCase):
         services.join_waitlist(first, self.event.id, 2)
         services.join_waitlist(second, self.event.id, 1)
 
-        # Celery runs the task right away in tests (CELERY_TASK_ALWAYS_EAGER)
+        # В тестовете Celery изпълнява задачата веднага (CELERY_TASK_ALWAYS_EAGER)
         services.cancel_booking(self.user, booking.id)
 
         self.assertEqual(Booking.objects.get(user=first).status, "pending")
@@ -219,12 +227,13 @@ class ReservationTests(TestCase):
 
 
 class TicketCounterTests(TestCase):
+    """Броячът booked_tickets винаги трябва да е верен."""
     def setUp(self):
         self.user = User.objects.create_user(username="ivan", password="x")
         self.event = make_event(total_tickets=10)
 
     def test_saving_an_old_copy_of_the_event_keeps_booked_tickets(self):
-        old_copy = Event.objects.get(pk=self.event.pk)  # like an admin page opened earlier
+        old_copy = Event.objects.get(pk=self.event.pk)  # като страница в админа, отворена по-рано
         reserve(self.user, self.event, 3)
         old_copy.title = "New title"
         old_copy.save()
@@ -255,27 +264,94 @@ class TicketCounterTests(TestCase):
             self.event.full_clean()
 
 
+class AdminTests(TestCase):
+    """Админът на организатора не трябва да може да заобиколи лимита на билетите."""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser(username="boss", password="x")
+        self.client.force_login(self.admin)
+        self.user = User.objects.create_user(username="ivan", password="x")
+        self.event = make_event(total_tickets=10)
+        self.booking = reserve(self.user, self.event, 4)
+
+    def post_event_form(self, total_tickets):
+        """Изпраща формата за редакция на събитие в админа с нов total_tickets."""
+        starts_at = timezone.localtime(self.event.starts_at)
+        return self.client.post(f"/admin/events/event/{self.event.pk}/change/", {
+            "title": self.event.title,
+            "description": "",
+            "location": self.event.location,
+            "starts_at_0": starts_at.strftime("%Y-%m-%d"),
+            "starts_at_1": starts_at.strftime("%H:%M:%S"),
+            "total_tickets": total_tickets,
+            "bookings-TOTAL_FORMS": "0",
+            "bookings-INITIAL_FORMS": "0",
+        })
+
+    def test_cannot_add_booking(self):
+        response = self.client.get("/admin/events/booking/add/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_cannot_change_booking(self):
+        url = f"/admin/events/booking/{self.booking.pk}/change/"
+        response = self.client.post(url, {"tickets": 9, "status": Booking.CONFIRMED})
+        self.assertEqual(response.status_code, 403)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.tickets, 4)
+        self.assertEqual(self.booking.status, Booking.PENDING)
+
+    def test_event_page_shows_bookings_read_only(self):
+        response = self.client.get(f"/admin/events/event/{self.event.pk}/change/")
+        self.assertEqual(response.status_code, 200)
+        # MAX_NUM_FORMS=0 скрива бутона "Add another" и няма полета за промяна.
+        self.assertContains(response, 'name="bookings-MAX_NUM_FORMS" value="0"')
+        self.assertNotContains(response, 'name="bookings-0-tickets"')
+        self.assertNotContains(response, 'name="bookings-0-expires_at"')
+
+    def test_deleting_a_booking_gives_tickets_back(self):
+        response = self.client.post(f"/admin/events/booking/{self.booking.pk}/delete/", {"post": "yes"})
+        self.assertEqual(response.status_code, 302)
+        self.event.refresh_from_db()
+        self.assertEqual(self.event.booked_tickets, 0)
+
+    def test_can_change_total_tickets(self):
+        response = self.post_event_form(total_tickets=20)
+        self.assertEqual(response.status_code, 302)
+        self.event.refresh_from_db()
+        self.assertEqual(self.event.total_tickets, 20)
+        self.assertEqual(self.event.booked_tickets, 4)
+
+    def test_cannot_lower_total_tickets_below_booked(self):
+        response = self.post_event_form(total_tickets=3)
+        self.assertEqual(response.status_code, 200)  # пак формата, с грешката
+        self.assertContains(response, "4 tickets are already booked.")
+        self.event.refresh_from_db()
+        self.assertEqual(self.event.total_tickets, 10)
+
+
 class ConcurrentBookingTests(TransactionTestCase):
     """
-    Many users at the same moment, each one in its own thread.
-    TransactionTestCase because every thread has its own DB connection
-    and must see data that is really committed.
+    Много потребители в един и същи момент, всеки в собствена нишка (thread).
+    Ползваме TransactionTestCase, защото всяка нишка има собствена връзка с базата
+    и трябва да вижда данни, които наистина са записани (commit-нати).
     """
 
     def run_at_the_same_time(self, how_many, work):
-        barrier = threading.Barrier(how_many)  # all threads start together
+        """Пуска work(0), work(1), ... в how_many нишки, които тръгват едновременно."""
+        barrier = threading.Barrier(how_many)  # всички нишки тръгват заедно
 
         def worker(number):
             barrier.wait()
             try:
                 return work(number)
             finally:
-                connection.close()
+                connection.close()  # всяка нишка затваря своята връзка с базата
 
         with ThreadPoolExecutor(max_workers=how_many) as pool:
             return list(pool.map(worker, range(how_many)))
 
     def test_100_users_10_tickets(self):
+        """100 потребители искат по 1 билет за събитие с 10 билета: точно 10 успяват."""
         event = make_event(total_tickets=10)
         users = [User.objects.create_user(username=f"user{i}", password="x") for i in range(100)]
 
@@ -295,6 +371,7 @@ class ConcurrentBookingTests(TransactionTestCase):
         self.assertEqual(active_tickets(event), 10)
 
     def test_same_booking_cancelled_10_times_at_once(self):
+        """Една резервация се отказва от 10 нишки наведнъж: билетите се връщат само веднъж."""
         event = make_event(total_tickets=10)
         user = User.objects.create_user(username="ivan", password="x")
         reserve(user, event, 2)
@@ -314,6 +391,7 @@ class ConcurrentBookingTests(TransactionTestCase):
         self.assertEqual(event.booked_tickets, 2)
 
     def test_same_idempotency_key_from_10_threads(self):
+        """10 нишки пращат един и същи ключ: прави се само една резервация."""
         event = make_event(total_tickets=10)
         user = User.objects.create_user(username="ivan", password="x")
         key = uuid.uuid4()
@@ -329,6 +407,7 @@ class ConcurrentBookingTests(TransactionTestCase):
         self.assertEqual(event.booked_tickets, 2)
 
     def test_confirm_and_cancel_at_the_same_time(self):
+        """Потвърждения и откази на едни и същи резервации едновременно: броячът остава верен."""
         event = make_event(total_tickets=10)
         user = User.objects.create_user(username="ivan", password="x")
         bookings = [reserve(user, event, 1) for _ in range(10)]
@@ -349,6 +428,7 @@ class ConcurrentBookingTests(TransactionTestCase):
         self.assertEqual(event.booked_tickets, active_tickets(event))
 
     def test_bookings_and_cancels_at_the_same_time(self):
+        """Резервации и откази едновременно: никога над 10 билета и броячът е верен."""
         event = make_event(total_tickets=10)
         user = User.objects.create_user(username="ivan", password="x")
         old_bookings = [reserve(user, event, 1) for _ in range(5)]
@@ -370,6 +450,7 @@ class ConcurrentBookingTests(TransactionTestCase):
 
 
 class WebSocketTests(TransactionTestCase):
+    """Браузърът получава новия брой билети през WebSocket."""
     def test_browser_gets_new_ticket_count(self):
         event = make_event(total_tickets=10)
         user = User.objects.create_user(username="ivan", password="x")

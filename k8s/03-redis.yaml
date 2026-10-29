@@ -1,4 +1,4 @@
-# Redis: Celery queue, rate limit counters, WebSocket messages
+# Redis: опашка за Celery, броячи за rate limit, WebSocket съобщения
 apiVersion: apps/v1
 kind: Deployment
 metadata:

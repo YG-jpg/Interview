@@ -1,4 +1,4 @@
-# WebSocket server (daphne) for the live ticket count, on http://localhost:30081
+# WebSocket сървър (daphne) за броя на билетите на живо, на http://localhost:30081
 apiVersion: apps/v1
 kind: Deployment
 metadata:

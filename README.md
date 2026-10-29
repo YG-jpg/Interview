@@ -12,17 +12,20 @@ Stack: Django, Django REST Framework, PostgreSQL, Redis, Celery, Django Channels
 
 ## Run it
 
-You need Docker Desktop.
+You need Docker Desktop and Python.
 
 ```bash
+python scripts/make_secrets.py   # once (on Windows: py scripts/make_secrets.py)
 docker compose up --build
 ```
+
+`make_secrets.py` writes `.env` (for Docker Compose) and `k8s/secret.env` (for Kubernetes) with random passwords and prints the admin password. Both files are in `.gitignore`. Only `.env.example`, without passwords, is in git.
 
 | What | URL |
 |---|---|
 | Website | http://localhost:8000/ |
 | API | http://localhost:8000/api/ |
-| Admin | http://localhost:8000/admin/ (admin / admin) |
+| Admin | http://localhost:8000/admin/ (admin / the password from `make_secrets.py`, also in `.env`) |
 | WebSocket | ws://localhost:8001/ws/events/<id>/ |
 
 1. Log in to the admin and add an event.
@@ -30,6 +33,8 @@ docker compose up --build
 3. Go to My bookings and click Confirm (within 5 minutes). The QR ticket shows up.
 
 Stop with `Ctrl+C`. `docker compose down -v` also deletes the database.
+
+If you ran the app before `.env` existed, the database still has the old password and Django can't connect. Run `docker compose down -v` once (this deletes the local data).
 
 ### Without Docker for Django
 
@@ -42,12 +47,13 @@ docker run -d --name eb-redis -p 6379:6379 redis:7
 py -3.13 -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
+$env:DEBUG = "1"   # DEBUG is off by default
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
 ```
 
-In two more terminals (activate `.venv` first):
+In two more terminals (first activate `.venv` and set `$env:DEBUG = "1"`):
 
 ```powershell
 celery -A config worker -B --pool=solo --loglevel=info   # --pool=solo is needed on Windows
@@ -59,16 +65,18 @@ daphne -p 8001 config.asgi:application
 Docker Desktop: Settings -> Kubernetes -> Enable. Then:
 
 ```bash
+python scripts/make_secrets.py   # if you haven't yet
+kubectl create secret generic event-booking-secret --from-env-file=k8s/secret.env
 docker build -t event-booking:latest .
 kubectl apply -f k8s/
 kubectl get pods
 ```
 
-Website on http://localhost:30080/, WebSocket on port 30081.
+Website on http://localhost:30080/ (admin password: in `k8s/secret.env`), WebSocket on port 30081. The pods run with `DEBUG=0` and only answer to the host names in `ALLOWED_HOSTS` in the ConfigMap (`localhost,127.0.0.1`; with minikube, add the IP from `minikube ip`).
 
 | File | What |
 |---|---|
-| 01-config.yaml | ConfigMap + Secret (settings and passwords) |
+| 01-config.yaml | ConfigMap with settings. No passwords: the Secret is made from `k8s/secret.env` |
 | 02-postgres.yaml | Postgres with a disk |
 | 03-redis.yaml | Redis |
 | 04-migrate-job.yaml | runs `migrate` once |
@@ -122,7 +130,11 @@ Postgres runs updates on the same row one after another and checks the `WHERE` a
 
 **Rate limiting.** DRF throttling: 10 bookings per minute per user, plus general limits. The counters are in Redis, so the limit is shared by all pods.
 
-**Live updates.** After every change `realtime.send_availability()` sends the new count to a Channels group. The event page listens on a WebSocket.
+**Live updates.** After every change `services.send_availability()` sends the new count to a Channels group. The event page listens on a WebSocket.
+
+**Admin.** Organizers can view bookings in the admin and delete them (the tickets come back), but can't add or change them, because that would get around the ticket limit. Lowering `total_tickets` below the booked tickets shows a form error.
+
+**Secrets and production settings.** No passwords or keys are in git. `DEBUG` is off unless `DEBUG=1`. Without `SECRET_KEY` the app refuses to start (except with `DEBUG=1`). `ALLOWED_HOSTS` comes from the environment, and a request with any other `Host` gets 400.
 
 **Threads.** Gunicorn runs 2 processes x 4 threads per pod. The tests start up to 100 threads at the same moment (`ThreadPoolExecutor` + `threading.Barrier`).
 
@@ -132,7 +144,7 @@ Postgres runs updates on the same row one after another and checks the `WHERE` a
 docker compose run --rm web python manage.py test
 ```
 
-Concurrency tests (`events/tests.py`, `ConcurrentBookingTests`): 100 users / 10 tickets, the same booking cancelled from 10 threads, the same idempotency key from 10 threads, confirm + cancel at once, bookings + cancels at once.
+Concurrency tests (`events/tests.py`, `ConcurrentBookingTests`): 100 users / 10 tickets, the same booking cancelled from 10 threads, the same idempotency key from 10 threads, confirm + cancel at once, bookings + cancels at once. `AdminTests`: the admin can't add or change bookings or lower `total_tickets` below the booked tickets.
 
 Demo against the running app (create an event with 10 tickets first):
 
@@ -146,19 +158,16 @@ docker compose exec web python scripts/concurrent_booking_demo.py 1 http://local
 config/            settings, urls, wsgi (Gunicorn), asgi (WebSockets), celery
 events/
   models.py        Event, Booking, WaitlistEntry
-  services.py      all booking rules
-  views.py         API
+  services.py      all booking rules + sends the ticket count to the WebSocket
+  views.py         API (+ booking rate limit, QR image)
   serializers.py
   tasks.py         Celery tasks
   consumers.py     WebSocket
-  realtime.py      sends ticket count to WebSocket
-  throttles.py     booking rate limit
-  qr.py            QR code image
   admin.py
   tests.py
 pages/             website (Django templates)
 k8s/               Kubernetes
-scripts/           concurrency demo
+scripts/           concurrency demo, make_secrets.py
 ```
 
 To add a new booking rule, change `events/services.py`. The API and the website both use it.

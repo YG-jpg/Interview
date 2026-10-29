@@ -1,3 +1,7 @@
+"""
+Настройка на Celery. Взима настройките от settings.py (тези, които започват с CELERY_)
+и намира задачите в tasks.py на всяко приложение.
+"""
 import os
 
 from celery import Celery

@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# Командният ред на Django: python manage.py migrate / test / createsuperuser / shell ...
 import os
 import sys
 

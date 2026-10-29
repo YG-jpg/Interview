@@ -1,3 +1,5 @@
+# Адресите на сайта (HTML страниците). Login и logout са вградените view-та на Django:
+# LoginView проверява паролата срещу хеша в базата и има CSRF защита.
 from django.contrib.auth import views as auth_views
 from django.urls import path
 

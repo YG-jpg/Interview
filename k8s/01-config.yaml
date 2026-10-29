@@ -1,25 +1,19 @@
-# Settings that are the same for every Django pod
+# Настройки, които са еднакви за всеки Django pod. Тук няма пароли.
+# Паролите са в Secret "event-booking-secret". Създай го от k8s/secret.env (не е в git):
+#   python scripts/make_secrets.py
+#   kubectl create secret generic event-booking-secret --from-env-file=k8s/secret.env
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: event-booking-config
 data:
-  DB_HOST: postgres
-  REDIS_URL: redis://redis:6379/0
   DEBUG: "0"
-  WEBSOCKET_PORT: "30081"
----
-# Passwords. In a real project these would not be in git.
-apiVersion: v1
-kind: Secret
-metadata:
-  name: event-booking-secret
-type: Opaque
-stringData:
+  # Имената на хостовете, на които отговаря сайтът. С minikube добави и IP-то от `minikube ip`.
+  ALLOWED_HOSTS: localhost,127.0.0.1
+  DB_HOST: postgres
   DB_NAME: events
   DB_USER: events
-  DB_PASSWORD: events
-  SECRET_KEY: change-me-in-production
+  REDIS_URL: redis://redis:6379/0
+  WEBSOCKET_PORT: "30081"
   DJANGO_SUPERUSER_USERNAME: admin
-  DJANGO_SUPERUSER_PASSWORD: admin
   DJANGO_SUPERUSER_EMAIL: admin@example.com

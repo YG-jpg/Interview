@@ -1,29 +1,38 @@
-# Run everything on your computer: docker compose up --build
+# Пуска всичко на твоя компютър:
+#   python scripts/make_secrets.py   (веднъж: създава .env със случайни пароли)
+#   docker compose up --build
+# Всички настройки и пароли идват от .env, който не е в git.
 services:
+  # База данни PostgreSQL. Данните се пазят във volume db_data и оцеляват при рестарт.
   db:
     image: postgres:17
-    # the test with 100 threads opens 100+ connections (default limit is 100)
+    # тестът със 100 нишки отваря над 100 връзки към базата (по подразбиране лимитът е 100)
     command: ["postgres", "-c", "max_connections=200"]
     environment:
-      POSTGRES_DB: events
-      POSTGRES_USER: events
-      POSTGRES_PASSWORD: events
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?no .env file - run python scripts/make_secrets.py first}
     volumes:
       - db_data:/var/lib/postgresql/data
+    # Проверява дали базата приема връзки. web тръгва чак когато тя е "healthy".
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "events"]
+      test: ["CMD", "pg_isready", "-U", "${DB_USER}"]
       interval: 2s
       retries: 15
 
+  # Redis: опашка за Celery, броячи за rate limit и WebSocket съобщения.
   redis:
     image: redis:7
 
-  # Django website + API (Gunicorn, 2 processes x 4 threads)
+  # Django сайтът + API-то (Gunicorn, 2 процеса x 4 нишки = 8 заявки едновременно).
+  # При старт: прилага миграциите, създава admin (ако го няма) и пуска Gunicorn.
+  # --reload рестартира сървъра при промяна в кода, а ".:/app" показва кода от твоята
+  # папка вътре в контейнера (само за разработка).
   web:
     build: .
     ports:
       - "8000:8000"
-    env_file: dev.env
+    env_file: .env
     command: >
       sh -c "python manage.py migrate &&
              (python manage.py createsuperuser --noinput || true) &&
@@ -36,27 +45,28 @@ services:
       redis:
         condition: service_started
 
-  # Celery: background tasks (expire reservations, waiting list). -B also runs the scheduler.
+  # Celery: фонови задачи (изтичане на резервации, листа на чакащите). -B пуска и графика (beat).
   worker:
     build: .
-    env_file: dev.env
+    env_file: .env
     command: celery -A config worker -B --loglevel=info
     volumes:
       - .:/app
     depends_on:
       - web
 
-  # WebSocket server for the live ticket count
+  # WebSocket сървър (daphne) за броя на билетите на живо
   websocket:
     build: .
     ports:
       - "8001:8001"
-    env_file: dev.env
+    env_file: .env
     command: daphne -b 0.0.0.0 -p 8001 config.asgi:application
     volumes:
       - .:/app
     depends_on:
       - web
 
+# Именуван volume - тук Postgres пази данните. "docker compose down -v" го изтрива.
 volumes:
   db_data:

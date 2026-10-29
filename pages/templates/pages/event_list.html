@@ -1,26 +1,26 @@
 {% extends "pages/base.html" %}
 
 {% block content %}
+{# Списък със събития като карти. widthratio смята процента продадени билети за лентата. #}
 <h1>Events</h1>
 
 {% if events %}
-<table>
-    <tr>
-        <th>Event</th>
-        <th>Date</th>
-        <th>Location</th>
-        <th>Booked</th>
-    </tr>
+<div class="grid">
     {% for event in events %}
-    <tr>
-        <td><a href="{% url 'event_detail' event.pk %}">{{ event.title }}</a></td>
-        <td>{{ event.starts_at|date:"Y-m-d H:i" }}</td>
-        <td>{{ event.location }}</td>
-        <td>{{ event.booked_tickets }} of {{ event.total_tickets }} booked</td>
-    </tr>
+    <div class="card event-card">
+        <span class="date-chip">{{ event.starts_at|date:"Y-m-d H:i" }}</span>
+        <h3><a href="{% url 'event_detail' event.pk %}">{{ event.title }}</a></h3>
+        <div class="meta">📍 {{ event.location }}</div>
+        <div class="progress"><span style="width: {% widthratio event.booked_tickets event.total_tickets 100 %}%"></span></div>
+        <div class="meta">
+            {{ event.booked_tickets }} of {{ event.total_tickets }} booked
+            {% if event.booked_tickets >= event.total_tickets %}<span class="badge badge-soldout">Sold out</span>{% endif %}
+        </div>
+        <a class="btn btn-light" href="{% url 'event_detail' event.pk %}">View &amp; book</a>
+    </div>
     {% endfor %}
-</table>
+</div>
 {% else %}
-<p>No events yet.</p>
+<div class="card empty">No events yet.</div>
 {% endif %}
 {% endblock %}

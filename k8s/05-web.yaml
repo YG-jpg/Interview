@@ -1,5 +1,5 @@
-# The Django app: 2 pods, each running Gunicorn with 2 processes x 4 threads.
-# Bookings stay correct across all pods and threads because the lock is in the database.
+# Django приложението: 2 pod-а, всеки пуска Gunicorn с 2 процеса x 4 нишки.
+# Резервациите остават верни във всички pod-ове и нишки, защото заключването е в базата.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -25,14 +25,19 @@ spec:
                 name: event-booking-config
             - secretRef:
                 name: event-booking-secret
-          # The pod gets traffic only when the home page answers (DB is up and migrated).
+          # Pod-ът получава трафик само когато началната страница отговаря (базата е горе и с миграции).
           readinessProbe:
             httpGet:
               path: /
               port: 8000
+              # Без това пробата праща IP-то на pod-а като host и Django
+              # отговаря с 400, защото то не е в ALLOWED_HOSTS.
+              httpHeaders:
+                - name: Host
+                  value: localhost
             periodSeconds: 5
 ---
-# Opens the app on http://localhost:30080
+# Отваря приложението на http://localhost:30080
 apiVersion: v1
 kind: Service
 metadata:
